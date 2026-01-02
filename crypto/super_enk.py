@@ -1,10 +1,9 @@
 import numpy as np
 
 # ==========================================================
-# KONSTANTA
+# KONSTANTA & SETUP
 # ==========================================================
 MODULO = 80
-
 CHAR_SET_80 = (
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
@@ -13,205 +12,195 @@ CHAR_SET_80 = (
     "!?'().,"
     "#$%^&*@"
 )
-
 CHAR_TO_NUM = {c: i for i, c in enumerate(CHAR_SET_80)}
 NUM_TO_CHAR = {i: c for i, c in enumerate(CHAR_SET_80)}
 
 # ==========================================================
-# UTILITAS DASAR
+# 1. HILL CIPHER
 # ==========================================================
-def clean_text(text):
-    return ''.join(c for c in text if c in CHAR_TO_NUM)
+def char_ke_angka(c): return CHAR_TO_NUM.get(c, 0)
+def angka_ke_char(i): return NUM_TO_CHAR[i % MODULO]
+def bersihkan_text(t): return ''.join([c for c in t if c in CHAR_TO_NUM])
 
-def char_to_num(c):
-    return CHAR_TO_NUM[c]
+def buat_matriks_key(key, m):
+    k = [char_ke_angka(c) for c in key if c in CHAR_TO_NUM]
+    # Padding jika key kurang panjang
+    while len(k) < m * m:
+        k.append(0)
+    return np.array(k[:m*m]).reshape(m, m)
 
-def num_to_char(n):
-    return NUM_TO_CHAR[n % MODULO]
-
-# ==========================================================
-# 1️⃣ HILL CIPHER (MODIFIKASI)
-# ==========================================================
-def build_key_matrix(key, size=4):
-    key_nums = [char_to_num(c) for c in clean_text(key)]
-    if len(key_nums) < size * size:
-        raise ValueError("Key terlalu pendek")
-    return np.array(key_nums[:size*size]).reshape(size, size)
-
-def mod_inverse(a, m):
+def mod_inv(a, m):
+    a %= m
     for x in range(1, m):
         if (a * x) % m == 1:
             return x
     return None
 
-def matrix_inverse_mod(mat, mod):
+def invers_matriks_mod(mat, mod):
     det = int(round(np.linalg.det(mat))) % mod
-    inv_det = mod_inverse(det, mod)
+    inv_det = mod_inv(det, mod)
     if inv_det is None:
-        raise ValueError("Matrix tidak invertible")
-
-    size = len(mat)
-    adj = np.zeros((size, size), dtype=int)
-
-    for i in range(size):
-        for j in range(size):
+        return None
+    m = len(mat)
+    adj = np.zeros((m, m), dtype=int)
+    for i in range(m):
+        for j in range(m):
             minor = np.delete(np.delete(mat, i, 0), j, 1)
-            adj[j][i] = ((-1) ** (i + j)) * int(round(np.linalg.det(minor)))
-
+            cofactor = ((-1)**(i+j)) * int(round(np.linalg.det(minor)))
+            adj[j, i] = cofactor
     return (inv_det * adj) % mod
 
-def hill_encrypt(text, key_matrix):
-    text = clean_text(text)
-    size = len(key_matrix)
-
-    while len(text) % size != 0:
+def enkripsi_hill(plain, key_matrix):
+    m = len(key_matrix)
+    text = bersihkan_text(plain)
+    while len(text) % m != 0:
         text += "@"
+    hasil = ""
+    for i in range(0, len(text), m):
+        v = np.array([char_ke_angka(c) for c in text[i:i+m]])
+        r = np.dot(key_matrix, v) % MODULO
+        hasil += ''.join([angka_ke_char(x) for x in r])
+    return hasil
 
-    result = ""
-    for i in range(0, len(text), size):
-        vector = np.array([char_to_num(c) for c in text[i:i+size]])
-        encrypted = np.dot(key_matrix, vector) % MODULO
-        result += ''.join(num_to_char(n) for n in encrypted)
-
-    return result
-
-def hill_decrypt(cipher, key_matrix):
-    inv_matrix = matrix_inverse_mod(key_matrix, MODULO)
-    size = len(inv_matrix)
-
-    result = ""
-    for i in range(0, len(cipher), size):
-        vector = np.array([char_to_num(c) for c in cipher[i:i+size]])
-        decrypted = np.dot(inv_matrix, vector) % MODULO
-        result += ''.join(num_to_char(n) for n in decrypted)
-
-    return result.rstrip("@")
+def dekripsi_hill(cipher, key_matrix):
+    inv = invers_matriks_mod(key_matrix, MODULO)
+    if inv is None:
+        # Fallback jika matriks tidak punya invers: kembalikan cipher apa adanya (tanda error)
+        return cipher 
+    m = len(inv)
+    hasil = ""
+    for i in range(0, len(cipher), m):
+        v = np.array([char_ke_angka(c) for c in cipher[i:i+m]])
+        r = np.dot(inv, v) % MODULO
+        hasil += ''.join([angka_ke_char(x) for x in r])
+    return hasil.rstrip("@")
 
 # ==========================================================
-# 2️⃣ MYZKOWSKI CIPHER (MODIFIKASI)
+# 2. MYZKOWSKI CIPHER
 # ==========================================================
 def myzkowski_order(key):
-    unique = sorted(set(key))
-    mapping = {c: i+1 for i, c in enumerate(unique)}
-    return [mapping[c] for c in key]
+    def prioritas(ch):
+        if ch.isalpha(): return (1, ch)
+        elif ch.isdigit(): return (2, ch)
+        else: return (3, ch)
+    klist = list(key)
+    unik = sorted(set(klist), key=prioritas)
+    peta = {ch: i+1 for i, ch in enumerate(unik)}
+    return [peta[ch] for ch in klist]
 
-def myzkowski_encrypt(text, key):
+def enkripsi_myzowski(text, key):
     text = text.replace(" ", "@")
-    order = myzkowski_order(key)
-    cols = len(key)
-
-    while len(text) % cols != 0:
+    urut = myzkowski_order(key)
+    kolom = len(key)
+    while len(text) % kolom != 0:
         text += "@"
+    baris = len(text)//kolom
+    matriks = [list(text[i*kolom:(i+1)*kolom]) for i in range(baris)]
+    hasil = ""
+    for num in sorted(set(urut)):
+        for row in matriks:
+            for idx, n in enumerate(urut):
+                if n == num:
+                    hasil += row[idx]
+    return hasil
 
-    rows = len(text) // cols
-    matrix = [list(text[i*cols:(i+1)*cols]) for i in range(rows)]
-
-    result = ""
-    for num in sorted(set(order)):
-        for row in matrix:
-            for idx, val in enumerate(order):
-                if val == num:
-                    result += row[idx]
-
-    return result
-
-def myzkowski_decrypt(cipher, key):
-    order = myzkowski_order(key)
-    cols = len(key)
-    rows = len(cipher) // cols
-
-    matrix = [["" for _ in range(cols)] for _ in range(rows)]
-    index = 0
-
-    for num in sorted(set(order)):
-        for r in range(rows):
-            for c, val in enumerate(order):
-                if val == num:
-                    matrix[r][c] = cipher[index]
-                    index += 1
-
-    return ''.join(''.join(row) for row in matrix).replace("@", " ")
+def dekripsi_myzowski(cipher, key):
+    urut = myzkowski_order(key)
+    kolom = len(key)
+    baris = len(cipher)//kolom
+    matriks = [["" for _ in range(kolom)] for _ in range(baris)]
+    pos = 0
+    for num in sorted(set(urut)):
+        for r in range(baris):
+            for idx, n in enumerate(urut):
+                if n == num:
+                    matriks[r][idx] = cipher[pos]
+                    pos += 1
+    plain = "".join("".join(r) for r in matriks)
+    return plain.replace("@", " ")
 
 # ==========================================================
-# 3️⃣ PLAYFAIR 8x10 (MODIFIKASI)
+# 3. PLAYFAIR CIPHER (8x10)
 # ==========================================================
-def build_playfair_matrix(key):
-    seen = []
-    for c in clean_text(key):
-        if c not in seen:
-            seen.append(c)
+def buat_matrix_playfair(key):
+    result = []
+    for c in key:
+        if c not in result and c in CHAR_TO_NUM:
+            result.append(c)
     for c in CHAR_SET_80:
-        if c not in seen:
-            seen.append(c)
+        if c not in result:
+            result.append(c)
+    mat = [result[i*10:(i+1)*10] for i in range(8)]
+    return mat
 
-    return [seen[i*10:(i+1)*10] for i in range(8)]
-
-def find_pos(c, matrix):
+def posisi(c, mat):
     for i in range(8):
         for j in range(10):
-            if matrix[i][j] == c:
-                return i, j
+            if mat[i][j] == c:
+                return (i, j)
     return None
 
-def playfair_encrypt(text, key):
-    matrix = build_playfair_matrix(key)
-    text = clean_text(text)
-
-    if len(text) % 2 != 0:
-        text += "@"
-
-    result = ""
+def enkripsi_playfair(text, key):
+    mat = buat_matrix_playfair(key)
+    teks = ''.join([c for c in text if c in CHAR_TO_NUM])
+    if len(teks) % 2 != 0:
+        teks += "@"
+    hasil = ""
     i = 0
-    while i < len(text):
-        a, b = text[i], text[i+1]
-        ra, ca = find_pos(a, matrix)
-        rb, cb = find_pos(b, matrix)
-
-        if ra == rb:
-            result += matrix[ra][(ca+1)%10] + matrix[rb][(cb+1)%10]
-        elif ca == cb:
-            result += matrix[(ra+1)%8][ca] + matrix[(rb+1)%8][cb]
+    while i < len(teks):
+        a, b = teks[i], teks[i+1]
+        pa, pb = posisi(a, mat), posisi(b, mat)
+        if pa is None or pb is None:
+            hasil += a + b
+        elif pa[0] == pb[0]:
+            hasil += mat[pa[0]][(pa[1]+1)%10] + mat[pb[0]][(pb[1]+1)%10]
+        elif pa[1] == pb[1]:
+            hasil += mat[(pa[0]+1)%8][pa[1]] + mat[(pb[0]+1)%8][pb[1]]
         else:
-            result += matrix[ra][cb] + matrix[rb][ca]
-
+            hasil += mat[pa[0]][pb[1]] + mat[pb[0]][pa[1]]
         i += 2
+    return hasil
 
-    return result
-
-def playfair_decrypt(cipher, key):
-    matrix = build_playfair_matrix(key)
-    result = ""
+def dekripsi_playfair(cipher, key):
+    mat = buat_matrix_playfair(key)
+    teks = ''.join([c for c in cipher if c in CHAR_TO_NUM])
+    hasil = ""
     i = 0
-
-    while i < len(cipher):
-        a, b = cipher[i], cipher[i+1]
-        ra, ca = find_pos(a, matrix)
-        rb, cb = find_pos(b, matrix)
-
-        if ra == rb:
-            result += matrix[ra][(ca-1)%10] + matrix[rb][(cb-1)%10]
-        elif ca == cb:
-            result += matrix[(ra-1)%8][ca] + matrix[(rb-1)%8][cb]
+    while i < len(teks):
+        a, b = teks[i], teks[i+1]
+        pa, pb = posisi(a, mat), posisi(b, mat)
+        if pa is None or pb is None:
+            hasil += a + b
+        elif pa[0] == pb[0]:
+            hasil += mat[pa[0]][(pa[1]-1)%10] + mat[pb[0]][(pb[1]-1)%10]
+        elif pa[1] == pb[1]:
+            hasil += mat[(pa[0]-1)%8][pa[1]] + mat[(pb[0]-1)%8][pb[1]]
         else:
-            result += matrix[ra][cb] + matrix[rb][ca]
-
+            hasil += mat[pa[0]][pb[1]] + mat[pb[0]][pa[1]]
         i += 2
-
-    return result.rstrip("@")
+    return hasil 
 
 # ==========================================================
-# 🔐 SUPER ENKRIPSI & DEKRIPSI (API FLASK)
+# API UTAMA (Digunakan oleh app.py)
 # ==========================================================
 def encrypt_message(key, plaintext):
-    key_matrix = build_key_matrix(key)
-    step1 = hill_encrypt(plaintext, key_matrix)
-    step2 = myzkowski_encrypt(step1, key)
-    final = playfair_encrypt(step2, key)
+    """Urutan: Hill -> Myzkowski -> Playfair"""
+    # 1. Hill
+    key_mat = buat_matriks_key(key, 4)
+    step1 = enkripsi_hill(plaintext, key_mat)
+    # 2. Myzkowski
+    step2 = enkripsi_myzowski(step1, key)
+    # 3. Playfair
+    final = enkripsi_playfair(step2, key)
     return final
 
 def decrypt_message(key, ciphertext):
-    step1 = playfair_decrypt(ciphertext, key)
-    step2 = myzkowski_decrypt(step1, key)
-    key_matrix = build_key_matrix(key)
-    final = hill_decrypt(step2, key_matrix)
+    """Urutan Balik: Playfair -> Myzkowski -> Hill"""
+    # 1. Playfair
+    step1 = dekripsi_playfair(ciphertext, key)
+    # 2. Myzkowski
+    step2 = dekripsi_myzowski(step1, key)
+    # 3. Hill
+    key_mat = buat_matriks_key(key, 4)
+    final = dekripsi_hill(bersihkan_text(step2), key_mat)
     return final

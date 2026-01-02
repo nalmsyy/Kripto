@@ -1,33 +1,179 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Secure Chat</title>
-  </head>
-  <body>
-    <h2>Secure Chat</h2>
+{% extends "base.html" %} {% block content %}
+<style>
+  .chat-bubble-me {
+    background-color: #dcf8c6; /* Warna Hijau Pesan Sendiri */
+  }
+  .chat-bubble-other {
+    background-color: #ffffff; /* Warna Putih Pesan Orang Lain */
+  }
+</style>
 
-    <!-- FORM CHAT (GANTI DI SINI) -->
-    <form method="POST" enctype="multipart/form-data">
-      <textarea name="message" placeholder="Hidden message"></textarea
-      ><br /><br />
-      <input type="file" name="image" /><br /><br />
-      <input
-        type="number"
-        name="receiver_id"
-        placeholder="Receiver ID"
-        required
-      /><br /><br />
-      <button type="submit">Send</button>
-    </form>
+<div class="row justify-content-center">
+  <div class="col-md-3 mb-3">
+    <div class="card shadow">
+      <div class="card-body text-center bg-primary text-white rounded-top">
+        <i class="fas fa-user-circle fa-3x mb-2"></i>
+        <h5 class="card-title">{{ session.username }}</h5>
+        <span class="badge bg-success">Online</span>
+      </div>
+      <div class="list-group list-group-flush">
+        <li
+          class="list-group-item d-flex justify-content-between align-items-center"
+        >
+          <strong>Total Kontak:</strong>
+          <span class="badge bg-secondary rounded-pill"
+            >{{ users|length }}</span
+          >
+        </li>
+      </div>
+      <div class="card-body">
+        <small class="text-muted">Daftar User Lain:</small>
+        <ul class="list-unstyled mt-2">
+          {% for user in users %}
+          <li>
+            <i class="fas fa-user text-secondary"></i> {{ user.username }}
+          </li>
+          {% else %}
+          <li class="text-muted small">Belum ada user lain.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
 
-    <hr />
+  <div class="col-md-9">
+    <div class="card shadow" style="height: 80vh">
+      <div
+        class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center"
+      >
+        <h5 class="m-0 text-primary fw-bold">
+          <i class="fas fa-comments"></i> Ruang Chat
+        </h5>
+        <small class="text-muted">Public & Private</small>
+      </div>
 
-    <h3>Chat History</h3>
-    {% for chat in chats %}
-    <p><b>{{ chat.sender }}</b>: {{ chat.message }}</p>
-    {% endfor %}
+      <div class="card-body overflow-auto bg-light" id="chatBox">
+        {% if not chats %}
+        <div class="text-center text-muted mt-5">
+          <i class="fas fa-comment-slash fa-3x mb-3 opacity-50"></i>
+          <p>Belum ada pesan. Mulai percakapan sekarang!</p>
+        </div>
+        {% else %} {% for chat in chats %} {% set is_me = (chat.sender_id ==
+        session.user_id) %} {% set is_public = (chat.receiver_id is none) %}
 
-    <br />
-    <a href="/dashboard">Back</a>
-  </body>
-</html>
+        <div
+          class="d-flex mb-3 {{ 'justify-content-end' if is_me else 'justify-content-start' }}"
+        >
+          <div
+            class="p-3 rounded-3 shadow-sm position-relative {{ 'chat-bubble-me' if is_me else 'chat-bubble-other' }}"
+            style="max-width: 75%; min-width: 200px"
+          >
+            <div class="d-flex justify-content-between mb-1 align-items-center">
+              <small
+                class="fw-bold {{ 'text-dark' if is_me else 'text-primary' }}"
+              >
+                {{ 'Saya' if is_me else chat.sender_name }}
+              </small>
+
+              {% if is_public %}
+              <span
+                class="badge bg-warning text-dark ms-2"
+                style="font-size: 0.6rem"
+                >📢 Public</span
+              >
+              {% else %}
+              <span class="badge bg-success ms-2" style="font-size: 0.6rem"
+                >🔒 Private</span
+              >
+              {% endif %}
+            </div>
+
+            {% if chat.image_url %}
+            <div class="mb-2">
+              <img
+                src="/{{ chat.image_url }}"
+                class="img-fluid rounded border"
+                style="max-height: 250px"
+              />
+            </div>
+            <div class="small text-muted fst-italic border-top pt-2 mt-1">
+              <i class="fas fa-key"></i> Pesan:
+              <strong>{{ chat.message }}</strong>
+            </div>
+            {% else %}
+            <div class="text-dark" style="white-space: pre-wrap">
+              {{ chat.message }}
+            </div>
+            {% endif %}
+
+            <div class="text-end mt-1 text-muted" style="font-size: 0.65rem">
+              {{ chat.created_at.strftime('%H:%M') }}
+            </div>
+          </div>
+        </div>
+        {% endfor %} {% endif %}
+      </div>
+
+      <div class="card-footer bg-white py-3">
+        <form method="POST" enctype="multipart/form-data">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <div class="input-group">
+                <span class="input-group-text bg-light"
+                  ><i class="fas fa-paper-plane"></i
+                ></span>
+                <select
+                  name="receiver_id"
+                  class="form-select fw-bold text-dark"
+                  required
+                >
+                  <option value="0" selected>📢 Semua Orang (Public)</option>
+                  <option disabled>──────────</option>
+                  {% for user in users %}
+                  <option value="{{ user.id }}">
+                    👤 {{ user.username }} (Private)
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <div class="col-md-8">
+              <div class="input-group">
+                <label
+                  class="btn btn-outline-secondary"
+                  title="Sisipkan Gambar (Stegano)"
+                >
+                  <i class="fas fa-image"></i>
+                  <input
+                    type="file"
+                    name="image"
+                    hidden
+                    onchange="alert('Gambar dipilih: ' + this.files[0].name)"
+                  />
+                </label>
+                <input
+                  type="text"
+                  name="message"
+                  class="form-control"
+                  placeholder="Tulis pesan..."
+                  autocomplete="off"
+                />
+                <button type="submit" class="btn btn-primary px-4">
+                  <i class="fas fa-arrow-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Auto scroll ke bawah saat halaman dibuka
+  var chatBox = document.getElementById("chatBox");
+  chatBox.scrollTop = chatBox.scrollHeight;
+</script>
+{% endblock %}

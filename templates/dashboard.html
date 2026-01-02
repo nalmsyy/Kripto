@@ -1,15 +1,44 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Dashboard</title>
-  </head>
-  <body>
-    <h2>Welcome, {{ session.username }}</h2>
+{% extends "base.html" %} {% block content %}
+<div class="text-center mb-5 mt-4">
+  <h1 class="display-5 fw-bold text-dark">Halo, {{ session.username }}!</h1>
+  <p class="lead text-muted">Selamat datang di sistem komunikasi aman.</p>
+</div>
 
-    <ul>
-      <li><a href="/chat">Chat</a></li>
-      <li><a href="/storage">File Storage</a></li>
-      <li><a href="/logout">Logout</a></li>
-    </ul>
-  </body>
-</html>
+<div class="row justify-content-center g-4">
+  <div class="col-md-5">
+    <a href="/chat" class="text-decoration-none">
+      <div class="card h-100 text-center p-5 shadow hover-effect">
+        <div class="card-body">
+          <i class="fas fa-comments fa-4x text-primary mb-3"></i>
+          <h3 class="card-title text-dark">Secure Chat</h3>
+          <p class="text-muted">
+            Chatting aman dengan enkripsi super dan steganografi gambar.
+          </p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-md-5">
+    <a href="/storage" class="text-decoration-none">
+      <div class="card h-100 text-center p-5 shadow hover-effect">
+        <div class="card-body">
+          <i class="fas fa-folder-open fa-4x text-warning mb-3"></i>
+          <h3 class="card-title text-dark">File Storage</h3>
+          <p class="text-muted">
+            Simpan file rahasia Anda dengan enkripsi tingkat tinggi.
+          </p>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<style>
+  .hover-effect:hover {
+    transform: translateY(-5px);
+    transition: 0.3s;
+    background-color: #f8f9fa;
+  }
+</style>
+{% endblock %}
