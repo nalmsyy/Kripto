@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Secure File Storage</title>
+  </head>
+  <body>
+    <h2>Secure File Storage</h2>
+
+    <form method="POST" enctype="multipart/form-data">
+      <input type="file" name="file" required />
+      <button type="submit">Upload</button>
+    </form>
+
+    <hr />
+
+    <h3>Your Files</h3>
+    <ul>
+      {% for f in files %}
+      <li>
+        {{ f.filename }} -
+        <a href="/download/{{ f.id }}">Download</a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <br />
+    <a href="/dashboard">Back</a>
+  </body>
+</html>

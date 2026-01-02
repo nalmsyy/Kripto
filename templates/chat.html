@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Secure Chat</title>
+  </head>
+  <body>
+    <h2>Secure Chat</h2>
+
+    <!-- FORM CHAT (GANTI DI SINI) -->
+    <form method="POST" enctype="multipart/form-data">
+      <textarea name="message" placeholder="Hidden message"></textarea
+      ><br /><br />
+      <input type="file" name="image" /><br /><br />
+      <input
+        type="number"
+        name="receiver_id"
+        placeholder="Receiver ID"
+        required
+      /><br /><br />
+      <button type="submit">Send</button>
+    </form>
+
+    <hr />
+
+    <h3>Chat History</h3>
+    {% for chat in chats %}
+    <p><b>{{ chat.sender }}</b>: {{ chat.message }}</p>
+    {% endfor %}
+
+    <br />
+    <a href="/dashboard">Back</a>
+  </body>
+</html>
