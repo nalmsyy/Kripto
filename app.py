@@ -8,10 +8,9 @@ from flask import Flask, render_template, request, redirect, session, url_for, s
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename 
-from sqlalchemy import or_ # PENTING untuk logika ATAU
+from sqlalchemy import or_ 
 
 # Import Modul Kripto Buatan Sendiri
-# Pastikan file super_enk.py dan steganography.py ada di folder crypto/
 from crypto.super_enk import encrypt_message, decrypt_message
 
 # ===============================
@@ -22,10 +21,15 @@ app.secret_key = "rahasia_negara_api"
 
 # Konfigurasi Upload Folder
 UPLOAD_FOLDER = 'static/uploads'
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# Gunakan path absolut untuk folder upload agar aman
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+ABS_UPLOAD_FOLDER = os.path.join(BASE_DIR, UPLOAD_FOLDER)
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+if not os.path.exists(ABS_UPLOAD_FOLDER):
+    os.makedirs(ABS_UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER # Path relatif untuk DB
+app.config['ABS_UPLOAD_FOLDER'] = ABS_UPLOAD_FOLDER # Path absolut untuk simpan file
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///securetalk.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -45,7 +49,7 @@ class Chat(db.Model):
     __tablename__ = 'chats'
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    receiver_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Nullable=True untuk Public
+    receiver_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) 
     cipher_text = db.Column(db.Text, nullable=False)
     is_stego = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -117,29 +121,29 @@ def chat():
             message = request.form.get("message", "")
             image_file = request.files.get("image")
 
-            # Tentukan Penerima (0 atau Kosong = Public)
             final_receiver_id = None
             if receiver_input and receiver_input != "0":
                 final_receiver_id = int(receiver_input)
 
-            # Enkripsi Pesan Teks
             cipher_text = encrypt_message(SUPER_KEY, message)
             is_stego_flag = False
 
-            # Cek Jika Ada Gambar (Steganografi)
             if image_file and image_file.filename != '':
                 filename = secure_filename(image_file.filename)
-                # Simpan sementara
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], "temp_" + filename)
+                
+                # Gunakan path absolut untuk penyimpanan
+                temp_filename = "temp_" + filename
+                temp_path = os.path.join(app.config['ABS_UPLOAD_FOLDER'], temp_filename)
+                
                 stego_name = "stego_" + str(int(datetime.now().timestamp())) + "_" + filename
-                stego_path = os.path.join(app.config['UPLOAD_FOLDER'], stego_name)
+                stego_path = os.path.join(app.config['ABS_UPLOAD_FOLDER'], stego_name)
                 
                 image_file.save(temp_path)
                 
-                # Sisipkan pesan terenkripsi ke gambar
                 from crypto import steganography as stego
+                # Encode gambar
                 if stego.encode_image(temp_path, cipher_text, stego_path):
-                    # Simpan Path Relatif (agar aman di database)
+                    # Simpan PATH RELATIF ke database (agar bisa diload HTML)
                     cipher_text = f"static/uploads/{stego_name}" 
                     is_stego_flag = True
                 else:
@@ -147,7 +151,6 @@ def chat():
                 
                 if os.path.exists(temp_path): os.remove(temp_path)
 
-            # Simpan ke DB
             new_chat = Chat(
                 sender_id=current_user_id,
                 receiver_id=final_receiver_id,
@@ -163,50 +166,47 @@ def chat():
             return "Terjadi kesalahan saat mengirim pesan."
 
     # --- 2. TAMPILKAN DATA (GET) ---
-    
-    # Ambil User Lain (Untuk Sidebar Kontak)
     all_users = User.query.filter(User.id != current_user_id).all()
 
-    # Query Chat: (Saya Sender) OR (Saya Receiver) OR (Public/Broadcast)
     chats = Chat.query.filter(
         or_(
             Chat.sender_id == current_user_id,
             Chat.receiver_id == current_user_id,
-            Chat.receiver_id == None  # <--- INI YG BIKIN PESAN PUBLIK MUNCUL
+            Chat.receiver_id == None 
         )
     ).order_by(Chat.created_at).all()
 
-    # Proses Dekripsi & Formatting
     processed_chats = []
     for c in chats:
         display_text = ""
         image_url = None
         
-        # Ambil Nama Pengirim
         sender_obj = User.query.get(c.sender_id)
         sender_name = sender_obj.username if sender_obj else "Unknown"
 
         try:
             if c.is_stego:
-                # Perbaikan Path Gambar (Ganti backslash Windows ke slash Browser)
-                # cipher_text di DB misal: static/uploads/stego.png
-                full_path = c.cipher_text.replace("\\", "/")
+                # 1. Ambil path relatif dari DB (misal: static/uploads/foto.png)
+                db_path_rel = c.cipher_text.replace("\\", "/")
+                image_url = db_path_rel
 
-                # URL untuk HTML (Hapus 'static/' karena pake url_for('static', filename=...))
-                # Tapi cara paling gampang direct path:
-                image_url = full_path
+                # 2. Buat ABSOLUTE PATH untuk proses decode (SOLUSI ERROR)
+                # app.root_path adalah folder dimana app.py berada
+                full_path_abs = os.path.join(app.root_path, db_path_rel)
 
-                # Dekripsi Isi Gambar
                 try:
-                    # decode_image butuh path sistem asli (bisa backslash/slash tergantung OS)
-                    # Kita pakai os.path.abspath atau biarkan relatif jika script dijalankan dari root
                     from crypto import steganography as stego
-                    extracted = stego.decode_image(full_path)
-                    if extracted:
-                        display_text = decrypt_message(SUPER_KEY, extracted)
+                    # Cek apakah file benar-benar ada sebelum decode
+                    if os.path.exists(full_path_abs):
+                        extracted = stego.decode_image(full_path_abs)
+                        if extracted:
+                            display_text = decrypt_message(SUPER_KEY, extracted)
+                        else:
+                            display_text = "[Gagal Ekstrak / Gambar Rusak]"
                     else:
-                        display_text = "[Gagal Ekstrak / Gambar Rusak]"
-                except Exception:
+                        display_text = "[File Gambar Tidak Ditemukan]"
+                except Exception as e:
+                    print(f"DEBUG ERROR: {e}") # Cek terminal jika masih error
                     display_text = "[Error Baca Gambar]"
             else:
                 display_text = decrypt_message(SUPER_KEY, c.cipher_text)
@@ -233,10 +233,10 @@ def storage():
         f = request.files['file']
         if f:
             fname = secure_filename(f.filename)
-            # Enkripsi sederhana (ubah ke hex + super enkripsi)
             enc_content = encrypt_message(SUPER_KEY, f.read().hex()).encode()
             
-            save_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{session['user_id']}_{fname}.enc")
+            # Gunakan ABS_UPLOAD_FOLDER
+            save_path = os.path.join(app.config['ABS_UPLOAD_FOLDER'], f"{session['user_id']}_{fname}.enc")
             with open(save_path, "wb") as file_out:
                 file_out.write(enc_content)
             
@@ -250,6 +250,11 @@ def storage():
 def download(fid):
     f_rec = FileModel.query.get_or_404(fid)
     if f_rec.user_id != session['user_id']: return "Unauthorized"
+    
+    # Pastikan file ada sebelum dibaca
+    if not os.path.exists(f_rec.encrypted_path):
+        return "File fisik tidak ditemukan di server."
+
     with open(f_rec.encrypted_path, "rb") as f:
         enc_data = f.read().decode()
     dec_hex = decrypt_message(SUPER_KEY, enc_data)
